@@ -23,7 +23,7 @@ set_prestashop="
         deny all;
         return 404;
     }
-    
+
     location ~* ^/(app|bin|cache|classes|config|controllers|docs|localization|override|src|tests|tools|translations|var|vendor)/ {
         deny all;
         return 403;
@@ -79,37 +79,124 @@ set_prestashop="
 "
 
 set_processwire="
-    location ~ ^/site(-[^/]+)?/assets/(.*\.php|backups|cache|config|install|logs|sessions) {
-	    deny  all;
+# ======================
+# ProcessWire 3.x+ Security Rules
+# ======================
+
+    # 1. Блокировка всех системных файлов
+    location ~ ^/(site|wire)/(assets|config|templates|modules|logs|sessions|cache|install)/.*\.(php|inc|module|tpl|html?|log|sql)$ {
+        deny all;
+        return 403;
     }
-    location ~ ^/site(-[^/]+)?/install {
-	    deny  all;
+
+    # 2. Защита инсталлятора и резервных копий (актуально для PW 3.0.229+)
+    location ~ ^/(site|site-[^/]+)/(install|backups) {
+        deny all;
+        return 403;
     }
-    location ~ ^/(site(-[^/]+)?|wire)/(config(-dev)?|index\.config)\.php {
-	    deny  all;
+
+    # 3. Блокировка конфигурационных файлов (включая новые форматы PW 3.x)
+    location ~ ^/(site|wire)/(config|index\.config|wire\.config)\.(php|json|yaml)$ {
+        deny all;
+        return 403;
     }
-    location ~ ^/((site(-[^/]+)?|wire)/modules|wire/core)/.*\.(inc|module|php|tpl) {
-	    deny  all;
+
+    # 4. Защита новых системных директорий ProcessWire 3.x
+    location ~ ^/(wire|site)/core/ {
+        deny all;
+        return 403;
     }
-    location ~ ^/(site(-[^/]+)?|wire)/templates(-admin)?/.*\.(inc|html?|php|tpl) {
-	    deny  all;
+
+    # 5. Блокировка доступа к временным файлам
+    location ~ ^/(site|wire)/assets/(cache|temp)/ {
+        deny all;
+        return 403;
+    }
+
+    # 6. Дополнительная защита (рекомендации ProcessWire)
+    location ~* ^/(COPYRIGHT|LICENSE|README|CHANGELOG|INSTALL)\.(md|txt)$ {
+        deny all;
+        return 403;
+    }
+
+    # 7. Базовые rewrite-правила для ProcessWire 3.x
+    location / {
+        try_files \$uri \$uri/ /index.php?it=\$uri&\$args;
+    }
+
+    # 8. Оптимизация статики
+    location ~* \.(webp|avif|jpg|jpeg|png|gif|ico|woff2|css|js)$ {
+        expires 365d;
+        add_header Cache-Control \"public, immutable\";
+        access_log off;
     }
 "
 
 set_opencart="
-	location = /sitemap.xml {
-		rewrite ^(.*)$ /index.php?route=extension/feed/google_sitemap last;
-	}
+# ======================
+# OpenCart 4.x Configuration
+# ======================
 
-	location = /googlebase.xml {
-	    rewrite ^(.*)$ /index.php?route=extension/feed/google_base last;
-	}
+    # 1. SEO-редиректы
+    location = /sitemap.xml {
+        rewrite ^ /index.php?route=extension/feed/google_sitemap last;
+    }
 
-	location /system {
-	    rewrite ^/system/storage/(.*) /index.php?route=error/not_found last;
-	}
-	
-	location /admin { index index.php; }
+    location = /googlebase.xml {
+        rewrite ^ /index.php?route=extension/feed/google_base last;
+    }
+
+    location = /robots.txt {
+        rewrite ^ /index.php?route=extension/feed/robots last;
+    }
+
+    # 2. Защита системных директорий
+    location ~ ^/(system|storage|vendor|config|logs|cache|download|upload) {
+        deny all;
+        return 403;
+    }
+
+    # 3. Безопасность админки
+    location /admin {
+        index index.php;
+        
+        # Дополнительная защита
+        location ~* \.(php|log|sql)$ {
+            deny all;
+            return 403;
+        }
+        
+        # Запрет доступа к файлам .env
+        location ~ /\.env {
+            deny all;
+            return 403;
+        }
+    }
+
+    # 4. Оптимизация статики
+    location ~* \.(webp|avif|jpg|jpeg|png|gif|ico|css|js|woff2|svg)$ {
+        expires 365d;
+        add_header Cache-Control \"public, immutable\";
+        access_log off;
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+
+    # 5. Основные rewrite-правила
+    location / {
+        try_files \$uri \$uri/ /index.php?\$route=\$uri&\$args;
+    }
+
+    # 6. Защита от распространённых атак
+    location ~* \.php$ {
+        fastcgi_param HTTP_PROXY \"\";
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+        
+        # Ограничение доступа к API
+        if (\$uri ~* \"/(api|opencart)/\") {
+            set \$auth \"Restricted\";
+        }
+    }
 "
 
 # echo "***************************************************";
