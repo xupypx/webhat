@@ -13,21 +13,70 @@ SET_GREEN="\033[1;32m"
 SET_UNDERLINE="\033[4m"
 SET_BOLD="\033[1m"
 SET_CLOSE="\033[0m"
-set_prestashop=" 
-#Настройка ЧПУ для Prestashop   
+set_prestashop="
+# ======================
+# PrestaShop 8.x NGINX Configuration
+# ======================
+
+    # Basic security blocks
+    location ~ /\.env {
+        deny all;
+        return 404;
+    }
+    
+    location ~* ^/(app|bin|cache|classes|config|controllers|docs|localization|override|src|tests|tools|translations|var|vendor)/ {
+        deny all;
+        return 403;
+    }
+
+    # Disable access to sensitive files
+    location ~* ^/(\.git|composer\.(json|lock)|config(_defines)?\.php|docker-compose\.yml)$ {
+        deny all;
+        return 403;
+    }
+
+    # API rewrite
     rewrite ^/api/?(.*)$ /webservice/dispatcher.php?url=\$1 last;
+
+    # Image rewrites (optimized for PS 8)
     rewrite ^/([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$1\$2.jpg last;
-    rewrite ^/([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$1\$2\$3.jpg last;
-    rewrite ^/([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$3/\$1\$2\$3\$4.jpg last;
-    rewrite ^/([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$3/\$4/\$1\$2\$3\$4\$5.jpg last;
-    rewrite ^/([0-9])([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$3/\$4/\$5/\$1\$2\$3\$4\$5\$6.jpg last;
-    rewrite ^/([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$3/\$4/\$5/\$6/\$1\$2\$3\$4\$5\$6\$7.jpg last;
-    rewrite ^/([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$3/\$4/\$5/\$6/\$7/\$1\$2\$3\$4\$5\$6\$7\$8.jpg last;
-    rewrite ^/([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$3/\$4/\$5/\$6/\$7/\$8/\$1\$2\$3\$4\$5\$6\$7\$8\$9.jpg last;
+    rewrite ^/([0-9]{2})(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2\$3.jpg last;
+    rewrite ^/([0-9]{3})(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$3\$4.jpg last;
+    rewrite ^/([0-9]{4})(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/\$1/\$2/\$3/\$4\$5.jpg last;
+
+    # Category images
     rewrite ^/c/([0-9]+)(-[_a-zA-Z0-9-]*)(-[0-9]+)?/.+\.jpg$ /img/c/\$1\$2.jpg last;
     rewrite ^/c/([a-zA-Z-]+)(-[0-9]+)?/.+\.jpg$ /img/c/\$1.jpg last;
-    rewrite ^/([0-9]+)(-[_a-zA-Z0-9-]*)(-[0-9]+)?/.+\.jpg$ /img/c/\$1\$2.jpg last;
-    try_files \$uri \$uri/ /index.php?\$args; "
+
+    # Static files caching
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff2?|ttf|eot)$ {
+        expires 365d;
+        add_header Cache-Control \"public, no-transform\";
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+
+    # Admin protection
+    location ~* ^/admin([0-9a-zA-Z]{0,})$ {
+        add_header X-Frame-Options \"SAMEORIGIN\";
+        add_header X-Content-Type-Options \"nosniff\";
+        add_header X-XSS-Protection \"1; mode=block\";
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+
+    # Main rewrite rule
+    location / {
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+
+    # PHP handling
+    location ~ \.php$ {
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PHP_VALUE \"upload_max_filesize=128M \n post_max_size=128M\";
+        fastcgi_read_timeout 300;
+    }
+"
 
 set_processwire="
     location ~ ^/site(-[^/]+)?/assets/(.*\.php|backups|cache|config|install|logs|sessions) {
