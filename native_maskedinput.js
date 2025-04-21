@@ -222,7 +222,7 @@ class InputMask {
 // Использование:
 document.addEventListener('DOMContentLoaded', function() {
   const phoneInput = document.querySelector('.InputPhone');
-  new InputMask(phoneInput, '+7 (999) 999-99-99', {
+  new InputMask(phoneInput, '+375 (99) 999-99-99', {
     placeholder: '_'
   });
 });
