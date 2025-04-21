@@ -1,228 +1,124 @@
-class InputMask {
-  constructor(input, mask, options = {}) {
-    this.input = input;
-    this.mask = mask;
-    this.options = {
-      placeholder: '_',
-      definitions: {
-        '9': '[0-9]',
-        'a': '[A-Za-z]',
-        '*': '[A-Za-z0-9]'
-      },
-      ...options
-    };
-    
-    this.maskPattern = this._createMaskPattern();
-    this._setupEvents();
-    this._applyInitialMask();
+class PhoneMask {
+  constructor(selector = "input[type='tel']", options = {}) {
+    this.inputs = document.querySelectorAll(selector);
+
+    // Опции по умолчанию
+    this.options = Object.assign({
+      pattern: '+375(__)___-__-__',
+      placeholderChar: '_',
+      prefix: '+375',
+      autofillFrom: null, // 'localStorage' | 'sessionStorage' | null
+    }, options);
+
+    this.init();
   }
 
-  _createMaskPattern() {
-    const pattern = [];
-    const definitions = this.options.definitions;
-    
-    this.mask.split('').forEach((char, index) => {
-      if (definitions[char]) {
-        pattern.push({
-          index,
-          regex: new RegExp(definitions[char]),
-          placeholder: this.options.placeholder.charAt(index) || this.options.placeholder
-        });
+  init() {
+    this.inputs.forEach((input) => {
+      if (this.options.autofillFrom && this.getStoredPhone()) {
+        input.value = this.formatValue(this.getDigits(this.getStoredPhone()));
       }
+
+      input.addEventListener('focus', () => this.onFocus(input));
+      input.addEventListener('blur', () => this.onBlur(input));
+      input.addEventListener('input', (e) => this.onInput(e, input));
+      input.addEventListener('keydown', (e) => this.onKeyDown(e, input));
     });
-    
-    return pattern;
   }
 
-  _setupEvents() {
-    this.input.addEventListener('focus', this._handleFocus.bind(this));
-    this.input.addEventListener('blur', this._handleBlur.bind(this));
-    this.input.addEventListener('input', this._handleInput.bind(this));
-    this.input.addEventListener('keydown', this._handleKeyDown.bind(this));
-  }
-
-  _applyInitialMask() {
-    if (!this.input.value) {
-      let maskedValue = '';
-      let maskIndex = 0;
-      
-      for (let i = 0; i < this.mask.length; i++) {
-        const isPatternChar = this.maskPattern.some(p => p.index === i);
-        maskedValue += isPatternChar ? this.options.placeholder : this.mask[i];
+  getStoredPhone() {
+    try {
+      if (this.options.autofillFrom === 'localStorage') {
+        return localStorage.getItem('phone') || '';
       }
-      
-      this.input.value = maskedValue;
+      if (this.options.autofillFrom === 'sessionStorage') {
+        return sessionStorage.getItem('phone') || '';
+      }
+    } catch (e) {
+      return '';
     }
   }
 
-  _handleFocus() {
-    if (this.input.value === '') {
-      this._applyInitialMask();
-    }
-    this._setCaretPosition(this._getFirstEditablePosition());
+  getDigits(value) {
+    return value.replace(/\D/g, '').replace(this.options.prefix.replace(/\D/g, ''), '').slice(0, 9);
   }
 
-  _handleBlur() {
-    if (this.input.value === this._getEmptyMask()) {
-      this.input.value = '';
-    }
+  formatValue(digits) {
+    const placeholderChar = this.options.placeholderChar;
+    const prefix = this.options.prefix;
+    let result = prefix;
+    if (digits.length > 0) result += '(' + digits.slice(0, 2);
+    if (digits.length >= 2) result += ')';
+    if (digits.length >= 3) result += digits.slice(2, 5);
+    if (digits.length >= 5) result += '-' + digits.slice(5, 7);
+    if (digits.length >= 7) result += '-' + digits.slice(7, 9);
+
+    const filledLength = result.length;
+    return result + placeholderChar.repeat(this.options.pattern.length - filledLength);
   }
 
-  _handleInput(e) {
-    const value = this.input.value;
-    const newValue = this._applyMask(value);
-    
-    if (value !== newValue) {
-      this.input.value = newValue;
+  setCursorPosition(input, pos) {
+    input.setSelectionRange(pos, pos);
+  }
+
+  onFocus(input) {
+    if (input.value.trim() === '') {
+      input.value = this.options.pattern;
     }
-    
-    // Сохраняем позицию курсора
-    const caretPos = this.input.selectionStart;
     setTimeout(() => {
-      this._setCaretPosition(this._getNextEditablePosition(caretPos - 1));
+      const firstEmpty = input.value.indexOf(this.options.placeholderChar);
+      if (firstEmpty !== -1) this.setCursorPosition(input, firstEmpty);
     }, 0);
   }
 
-  _handleKeyDown(e) {
-    // Обработка Backspace и Delete
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      const caretPos = this.input.selectionStart;
-      const selectionLength = this.input.selectionEnd - caretPos;
-      
-      if (selectionLength > 0) {
-        // Удаление выделенного текста
-        e.preventDefault();
-        this._clearSelection(caretPos, caretPos + selectionLength);
-      } else if (e.key === 'Backspace' && caretPos > 0) {
-        // Обработка Backspace
-        e.preventDefault();
-        const prevPos = this._getPreviousEditablePosition(caretPos - 1);
-        if (prevPos !== -1) {
-          this._clearCharacter(prevPos);
-          this._setCaretPosition(prevPos);
-        }
-      } else if (e.key === 'Delete' && caretPos < this.input.value.length) {
-        // Обработка Delete
-        e.preventDefault();
-        const nextPos = this._getNextEditablePosition(caretPos);
-        if (nextPos !== -1) {
-          this._clearCharacter(nextPos);
-          this._setCaretPosition(nextPos);
-        }
+  onBlur(input) {
+    if (this.getDigits(input.value).length < 9) {
+      input.value = '';
+    } else {
+      this.savePhone(input.value);
+    }
+  }
+
+  onInput(e, input) {
+    const digits = this.getDigits(input.value);
+    const formatted = this.formatValue(digits);
+    input.value = formatted;
+
+    const next = formatted.indexOf(this.options.placeholderChar);
+    this.setCursorPosition(input, next !== -1 ? next : formatted.length);
+  }
+
+  onKeyDown(e, input) {
+    const pos = input.selectionStart;
+    const digits = this.getDigits(input.value);
+
+    if (e.key === 'Backspace' && pos > this.options.prefix.length) {
+      e.preventDefault();
+      const newDigits = digits.slice(0, -1);
+      const formatted = this.formatValue(newDigits);
+      input.value = formatted;
+
+      const next = formatted.indexOf(this.options.placeholderChar);
+      this.setCursorPosition(input, next !== -1 ? next : formatted.length);
+    }
+
+    const allowed = ['ArrowLeft', 'ArrowRight', 'Backspace', 'Delete', 'Tab'];
+    if (!/\d/.test(e.key) && !allowed.includes(e.key)) {
+      e.preventDefault();
+    }
+  }
+
+  savePhone(phoneValue) {
+    const digits = this.getDigits(phoneValue);
+    if (digits.length === 9) {
+      const fullPhone = this.formatValue(digits);
+      if (this.options.autofillFrom === 'localStorage') {
+        localStorage.setItem('phone', fullPhone);
+      }
+      if (this.options.autofillFrom === 'sessionStorage') {
+        sessionStorage.setItem('phone', fullPhone);
       }
     }
-  }
-
-  _applyMask(value) {
-    let result = this._getEmptyMask();
-    let valueIndex = 0;
-    
-    for (let i = 0; i < this.mask.length && valueIndex < value.length; i++) {
-      const pattern = this.maskPattern.find(p => p.index === i);
-      
-      if (pattern) {
-        const char = value[valueIndex];
-        if (pattern.regex.test(char)) {
-          result = this._setCharAt(result, i, char);
-          valueIndex++;
-        }
-      } else {
-        if (value[valueIndex] === this.mask[i]) {
-          valueIndex++;
-        }
-      }
-    }
-    
-    return result;
-  }
-
-  _clearSelection(start, end) {
-    let value = this.input.value.split('');
-    for (let i = start; i < end; i++) {
-      const pattern = this.maskPattern.find(p => p.index === i);
-      if (pattern) {
-        value[i] = pattern.placeholder;
-      }
-    }
-    this.input.value = value.join('');
-  }
-
-  _clearCharacter(pos) {
-    const pattern = this.maskPattern.find(p => p.index === pos);
-    if (pattern) {
-      let value = this.input.value.split('');
-      value[pos] = pattern.placeholder;
-      this.input.value = value.join('');
-    }
-  }
-
-  _getEmptyMask() {
-    let result = '';
-    for (let i = 0; i < this.mask.length; i++) {
-      const pattern = this.maskPattern.find(p => p.index === i);
-      result += pattern ? pattern.placeholder : this.mask[i];
-    }
-    return result;
-  }
-
-  _getFirstEditablePosition() {
-    const firstPattern = this.maskPattern[0];
-    return firstPattern ? firstPattern.index : 0;
-  }
-
-  _getNextEditablePosition(currentPos) {
-    for (let i = currentPos + 1; i < this.mask.length; i++) {
-      if (this.maskPattern.some(p => p.index === i)) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  _getPreviousEditablePosition(currentPos) {
-    for (let i = currentPos; i >= 0; i--) {
-      if (this.maskPattern.some(p => p.index === i)) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  _setCharAt(str, index, char) {
-    return str.substring(0, index) + char + str.substring(index + 1);
-  }
-
-  _setCaretPosition(pos) {
-    this.input.setSelectionRange(pos, pos);
-  }
-
-  // Публичные методы
-  unmask() {
-    let unmaskedValue = '';
-    const value = this.input.value;
-    
-    this.maskPattern.forEach(pattern => {
-      const char = value[pattern.index];
-      if (char !== pattern.placeholder) {
-        unmaskedValue += char;
-      }
-    });
-    
-    return unmaskedValue;
-  }
-
-  destroy() {
-    this.input.removeEventListener('focus', this._handleFocus);
-    this.input.removeEventListener('blur', this._handleBlur);
-    this.input.removeEventListener('input', this._handleInput);
-    this.input.removeEventListener('keydown', this._handleKeyDown);
   }
 }
 
-// Использование:
-document.addEventListener('DOMContentLoaded', function() {
-  const phoneInput = document.querySelector('.InputPhone');
-  new InputMask(phoneInput, '+375 (99) 999-99-99', {
-    placeholder: '_'
-  });
-});
